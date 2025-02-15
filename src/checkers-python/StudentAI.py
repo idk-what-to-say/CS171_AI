@@ -15,7 +15,9 @@ class StudentAI():
         self.color = ''
         self.opponent = {1:2,2:1}
         self.color = 2
-        self.depth = 3 # look ahead depth
+        self.depth = 4 # look ahead depth
+        self.previous_boards = {}  # Track past board states
+
 
     # returns best move 
     def get_move(self,move):
@@ -27,7 +29,12 @@ class StudentAI():
         # convert board state to a hashable string
         board_state = str(self.board.board)
 
-        self.previous_boards.add(board_state)  # Store new board state
+        # if board has been seen before, add a penalty
+        if board_state in self.previous_boards:
+            self.previous_boards[board_state] += 1
+        else:
+            self.previous_boards[board_state] = 1
+
         
         best_move = self.minimax(self.board, self.depth, True, float('-inf'), float('inf'))[-1]
         self.board.make_move(best_move, self.color)
