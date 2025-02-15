@@ -15,7 +15,7 @@ class StudentAI():
         self.color = ''
         self.opponent = {1:2,2:1}
         self.color = 2
-        self.depth = 4 # look ahead depth
+        self.depth = 5 # look ahead depth
         self.previous_boards = {}  # Track past board states
 
 
@@ -98,11 +98,29 @@ class StudentAI():
             for col in range(self.col):
                 piece = board.board[row][col]
 
-                if piece and piece.color == ('W' if self.color == 2 else 'B'):
-                    ai_pieces += 3 if piece.is_king else 1
-                elif piece and piece.color == ('W' if self.opponent[self.color] == 2 else 'B'):
-                    opp_pieces += 3 if piece.is_king else 1
+                if piece:
+                    # piece value
+                    piece_value = 5 if piece.is_king else 1
+
+                    # center control bonus
+                    position_value = (self.row - abs(row - self.row // 2)) * 0.2
+
+                    # edge penalty (discourage weak edge pieces)
+                    edge_penalty = -0.3 if col == 0 or col == self.col - 1 else 0
+
+                    # encourage forward movement
+                    direction_bonus = 0.5 if (piece.color == 'W' and row < self.row // 2) or (piece.color == 'B' and row > self.row // 2) else 0
+
+                    # add to AI or opponent score
+                    if piece.color == ('W' if self.color == 2 else 'B'):
+                        ai_pieces += piece_value + position_value + edge_penalty + direction_bonus
+                    else:
+                        opp_pieces += piece_value + position_value + edge_penalty + direction_bonus
+            
+        # add a penalty for repetition (avoid loops)
+        board_state = str(board.board)
+        repetition_penalty = -5 * self.previous_boards.get(board_state, 0)
         
-        return ai_pieces - opp_pieces # higher score is better for AI
+        return ai_pieces - opp_pieces + repetition_penalty # higher score is better for AI
 
 
