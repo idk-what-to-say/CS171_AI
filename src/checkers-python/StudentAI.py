@@ -1,6 +1,7 @@
 from random import randint
 from BoardClasses import Move
 from BoardClasses import Board
+import math
 #The following part should be completed by students.
 #Students can modify anything except the class name and exisiting functions and varibles.
 class StudentAI():
@@ -14,115 +15,101 @@ class StudentAI():
         self.color = ''
         self.opponent = {1:2,2:1}
         self.color = 2
-        self.max_depth = 4
+
+        self.num_simulations = 200
+        self.rollout_limit   = 40
+        self.C               = 1.4
+
     def get_move(self,move):
-        # if len(move) != 0:
-        #     self.board.make_move(move,self.opponent[self.color])
-        # else:
-        #     self.color = 1
-        # moves = self.board.get_all_possible_moves(self.color)
-        # index = randint(0,len(moves)-1)
-        # inner_index =  randint(0,len(moves[index])-1)
-        # move = moves[index][inner_index]
-        # self.board.make_move(move,self.color)
-        # return move
         if len(move) != 0:
             self.board.make_move(move, self.opponent[self.color])
         else:
             self.color = 1
 
-        moves = self.board.get_all_possible_moves(self.color)
-        if not moves:
+        move_lists = self.board.get_all_possible_moves(self.color)
+        legal_moves = self._flatten_moves(move_lists)
+
+        if not legal_moves:
             return Move([])
+        if len(legal_moves) == 1:
+            best_move = legal_moves[0]
+            self.board.make_move(best_move, self.color)
+            return best_move
 
-        best_move = None
-        best_value = float('-inf')
-        for move_list in moves:
-            for candidate_move in move_list:
-                self.board.make_move(candidate_move, self.color)
-                value = self._minimax(self.max_depth - 1, False, self.opponent[self.color], float('-inf'), float('inf'))
-                self.board.undo()
-                if value > best_value:
-                    best_value = value
-                    best_move = candidate_move
+        plays = {m: 0 for m in legal_moves}
+        wins = {m: 0.0 for m in legal_moves}
 
-        if best_move is None:
-            best_move = moves[0][0]
+        for _ in range(self.num_simulations):
+            root_move = self._select_move_ucb(legal_moves, wins, plays)
+            winner = self._simulate(root_move)
 
+            plays[root_move] += 1
+            if winner == self.color:
+                wins[root_move] += 1.0
+            elif winner == 0:
+                wins[root_move] += 0.5
+
+        def avg_score(m):
+            if plays[m] == 0:
+                return -float('inf')
+            return wins[m] / plays[m]
+
+        best_move = max(legal_moves, key=avg_score)
         self.board.make_move(best_move, self.color)
         return best_move
 
-    def _minimax(self, depth, maximizing_player, current_color, alpha, beta):
-        moves = self.board.get_all_possible_moves(current_color)
-        if depth == 0:
-            return self._evaluate_board()
+    def _simulate(self, root_move):
+        move_history = []
 
-        if not moves:
-            return float('-inf') if maximizing_player else float('inf')
+        self.board.make_move(root_move, self.color)
+        move_history.append(root_move)
+        current_color = self.opponent[self.color]
 
-        if maximizing_player:
-            value = float('-inf')
-            for move_list in moves:
-                for candidate_move in move_list:
-                    self.board.make_move(candidate_move, current_color)
-                    value = max(value, self._minimax(depth - 1, False, self.opponent[current_color], alpha, beta))
-                    self.board.undo()
-                    alpha = max(alpha, value)
-                    if beta <= alpha:
-                        break
-                if beta <= alpha:
-                    break
-            return value
+        steps = 0
+        winner = 0
+        while steps < self.rollout_limit:
+            move_lists = self.board.get_all_possible_moves(current_color)
+            legal_moves = self._flatten_moves(move_lists)
+
+            if not legal_moves:
+                winner = self.opponent[current_color]
+                break
+
+            m = legal_moves[randint(0, len(legal_moves) - 1)]
+            self.board.make_move(m, current_color)
+            move_history.append(m)
+
+            current_color = self.opponent[current_color]
+            steps += 1
         else:
-            value = float('inf')
-            for move_list in moves:
-                for candidate_move in move_list:
-                    self.board.make_move(candidate_move, current_color)
-                    value = min(value, self._minimax(depth - 1, True, self.opponent[current_color], alpha, beta))
-                    self.board.undo()
-                    beta = min(beta, value)
-                    if beta <= alpha:
-                        break
-                if beta <= alpha:
-                    break
-            return value
+            winner = 0
 
-    def _evaluate_board(self):
-        score = 0
-        my_color = self._color_to_char(self.color)
-        opponent_color = self._color_to_char(self.opponent[self.color])
+        for _ in range(len(move_history)):
+            self.board.undo()
 
-        for r in range(self.row):
-            for c in range(self.col):
-                checker = self.board.board[r][c]
-                if checker.color == my_color:
-                    score += self._piece_value(checker)
-                    score += self._positional_bonus(checker)
-                elif checker.color == opponent_color:
-                    score -= self._piece_value(checker)
-                    score -= self._positional_bonus(checker)
+        return winner
 
-        return score
+    def _flatten_moves(self, move_lists):
+        flat = []
+        for ml in move_lists:
+            for m in ml:
+                flat.append(m)
+        return flat
 
-    def _piece_value(self, checker):
-        base_value = 5 if checker.is_king else 3
-        return base_value
+    def _select_move_ucb(self, legal_moves, wins, plays):
+        untried = [m for m in legal_moves if plays[m] == 0]
+        if untried:
+            return untried[randint(0, len(untried) - 1)]
 
-    def _positional_bonus(self, checker):
-        if checker.is_king:
-            return 0.5
+        total_sim = sum(plays[m] for m in legal_moves)
+        log_total = math.log(total_sim)
 
-        my_color = self._color_to_char(self.color)
-        if my_color == 'B':
-            advancement_bonus = checker.row * 0.1
-        else:
-            advancement_bonus = (self.row - 1 - checker.row) * 0.1
-
-        central_bonus = (self.col / 2 - abs(checker.col - (self.col - 1) / 2)) * 0.05
-        return advancement_bonus + central_bonus
-
-    def _color_to_char(self, color):
-        if color == 1:
-            return 'B'
-        return 'W'
-
+        best_score = -float('inf')
+        best_move = None
+        for m in legal_moves:
+            q = wins[m] / plays[m]
+            ucb = q + self.C * math.sqrt(log_total / plays[m])
+            if ucb > best_score:
+                best_score = ucb
+                best_move = m
+        return best_move
